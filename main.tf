@@ -50,34 +50,46 @@ resource "aws_instance" "flask_ec2" {
 
   user_data = <<-EOF
               #!/bin/bash
-              yum update -y
-              yum install -y python3 git
+set -e
 
-              # App directory
-              mkdir -p /opt/flask-app
-              cd /opt/flask-app
+# Log everything (debug help)
+exec > /var/log/user-data.log 2>&1
 
-              # Flask app
-              cat << 'EOPY' > app.py
-              from flask import Flask
-              import os
+# Update & install packages
+yum update -y
+yum install -y python3 python3-pip
 
-              app = Flask(__name__)
+# App directory
+APP_DIR=/opt/flask-app
+mkdir -p $APP_DIR
+cd $APP_DIR
 
-              @app.route("/")
-              def hello():
-                  return "Flask app running via Terraform user-data 🚀"
+# Create Flask app
+cat << 'EOF' > app.py
+from flask import Flask
+import os
 
-              if __name__ == "__main__":
-                  app.run(host="0.0.0.0", port=5000)
-              EOPY
+app = Flask(__name__)
 
-              # Install Flask
-              pip3 install flask
+@app.route("/")
+def hello():
+    return "Flask app running successfully with nohup 🚀"
 
-              # Run app in background
-              nohup python3 app.py > app.log 2>&1 &
-              EOF
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+EOF
+
+# Install Flask
+pip3 install flask
+
+# Kill old Flask process if exists
+pkill -f app.py || true
+
+# Run Flask using nohup
+nohup python3 app.py > app.log 2>&1 &
+
+echo "Flask app started using nohup"
+
 
   tags = {
     Name = "terraform-flask-ec2"
