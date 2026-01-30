@@ -49,25 +49,20 @@ resource "aws_instance" "flask_ec2" {
   vpc_security_group_ids = [aws_security_group.flask_sg.id]
 
   user_data = <<-EOF
-              #!/bin/bash
+#!/bin/bash
 set -e
 
-# Log everything (debug help)
 exec > /var/log/user-data.log 2>&1
 
-# Update & install packages
 yum update -y
 yum install -y python3 python3-pip
 
-# App directory
 APP_DIR=/opt/flask-app
 mkdir -p $APP_DIR
 cd $APP_DIR
 
-# Create Flask app
-cat << 'EOF' > app.py
+cat << 'PYEOF' > app.py
 from flask import Flask
-import os
 
 app = Flask(__name__)
 
@@ -77,19 +72,15 @@ def hello():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-EOF
+PYEOF
 
-# Install Flask
 pip3 install flask
 
-# Kill old Flask process if exists
 pkill -f app.py || true
-
-# Run Flask using nohup
 nohup python3 app.py > app.log 2>&1 &
 
 echo "Flask app started using nohup"
-
+EOF
 
   tags = {
     Name = "terraform-flask-ec2"
