@@ -1,31 +1,88 @@
-name: Terraform Deploy Flask App
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
 
-on:
-  workflow_dispatch:   # 👈 Manual trigger button
+provider "aws" {
+  region = "us-east-1"
+}
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+# -------------------------
+# SECURITY GROUP
+# -------------------------
+resource "aws_security_group" "flask_sg" {
+  name = "flask-sg"
 
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: us-east-1
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.6
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
-      - name: Terraform Init
-        run: terraform init
+# -------------------------
+# EC2 INSTANCE
+# -------------------------
+resource "aws_instance" "flask_ec2" {
+  ami                    = "ami-0532be01f26a3de55" # Amazon Linux (us-east-1)
+  instance_type          = "t3.micro"
+  key_name               = "test123"
+  vpc_security_group_ids = [aws_security_group.flask_sg.id]
 
-      - name: Terraform Plan
-        run: terraform plan
+  user_data = <<-EOF
+#!/bin/bash
+set -e
 
-      - name: Terraform Apply
-        run: terraform apply -auto-approve
+exec > /var/log/user-data.log 2>&1
+
+yum update -y
+yum install -y python3 python3-pip
+
+APP_DIR=/opt/flask-app
+mkdir -p $APP_DIR
+cd $APP_DIR
+
+cat << 'PYEOF' > app.py
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/")
+def hello():
+    return "Flask app running successfully with nohup 🚀"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+PYEOF
+
+pip3 install flask
+
+pkill -f app.py || true
+nohup python3 app.py > app.log 2>&1 &
+
+echo "Flask app started using nohup"
+EOF
+
+  tags = {
+    Name = "terraform-flask-ec2"
+  }
+}
